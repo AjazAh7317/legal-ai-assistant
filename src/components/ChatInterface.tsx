@@ -2,17 +2,21 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Download, RefreshCw, FileText, Scale, Search, FileCheck } from "lucide-react";
+import { Send, Download, RefreshCw, FileText, Scale, Search, FileCheck, Upload } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useLegalChat } from "@/hooks/useLegalChat";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
 
 type ChatMode = "chat" | "document" | "research" | "contract";
 
 export const ChatInterface = () => {
   const [mode, setMode] = useState<ChatMode>("chat");
   const [input, setInput] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
   
   const { messages, sendMessage, isLoading, resetChat } = useLegalChat({ mode });
 
@@ -22,14 +26,75 @@ export const ChatInterface = () => {
     }
   }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim() || isLoading) return;
-    sendMessage(input);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        variant: "destructive",
+        title: "File too large",
+        description: "Please upload a file smaller than 10MB.",
+      });
+      return;
+    }
+
+    // Check file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid file type",
+        description: "Please upload PDF, DOC, DOCX, or TXT files only.",
+      });
+      return;
+    }
+
+    setUploadedFile(file);
+    toast({
+      title: "File uploaded",
+      description: `${file.name} is ready for analysis.`,
+    });
+  };
+
+  const handleSend = async () => {
+    if ((!input.trim() && !uploadedFile) || isLoading) return;
+    
+    let messageContent = input;
+    
+    if (uploadedFile) {
+      // Read file content
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const fileContent = e.target?.result as string;
+        const fullMessage = `${input}\n\n[Document: ${uploadedFile.name}]\n${fileContent.substring(0, 10000)}`; // Limit to first 10k chars
+        await sendMessage(fullMessage);
+        setUploadedFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsText(uploadedFile);
+    } else {
+      await sendMessage(messageContent);
+    }
+    
     setInput("");
   };
 
   const handleModeChange = (newMode: string) => {
     setMode(newMode as ChatMode);
+    setUploadedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     resetChat();
   };
 
@@ -148,6 +213,36 @@ export const ChatInterface = () => {
 
                 {/* Chat Input */}
                 <div className="p-4 bg-background border-t border-border">
+                  {(mode === "document" || mode === "contract") && (
+                    <div className="mb-3">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label htmlFor="file-upload">
+                        <Button
+                          variant="outline"
+                          className={`w-full cursor-pointer ${uploadedFile ? 'border-primary' : ''}`}
+                          asChild
+                          disabled={isLoading}
+                        >
+                          <span className="flex items-center justify-center gap-2">
+                            <Upload className="h-4 w-4" />
+                            {uploadedFile ? `✓ ${uploadedFile.name}` : "Upload Document (PDF, DOC, DOCX, TXT)"}
+                          </span>
+                        </Button>
+                      </label>
+                      {uploadedFile && (
+                        <p className="text-xs text-muted-foreground mt-1 text-center">
+                          File ready for analysis. Add instructions and click Send.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Input
                       placeholder={`Type your ${mode === "chat" ? "legal question" : mode + " request"} here...`}
@@ -160,7 +255,7 @@ export const ChatInterface = () => {
                     <Button 
                       variant="legal" 
                       onClick={handleSend}
-                      disabled={isLoading || !input.trim()}
+                      disabled={isLoading || (!input.trim() && !uploadedFile)}
                     >
                       <Send className="h-4 w-4" />
                       Send
