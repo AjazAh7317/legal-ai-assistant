@@ -54,15 +54,23 @@ const Auth = () => {
       });
 
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Sign up failed",
-          description: error.message,
-        });
+        if (error.message.includes("already registered")) {
+          toast({
+            variant: "destructive",
+            title: "Account already exists",
+            description: "This email is already registered. Please log in instead.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Sign up failed",
+            description: error.message,
+          });
+        }
       } else {
         toast({
           title: "Success!",
-          description: "Account created successfully. You can now log in.",
+          description: "Account created successfully. Please switch to Login tab.",
         });
         setEmail("");
         setPassword("");
@@ -90,11 +98,19 @@ const Auth = () => {
       });
 
       if (error) {
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: error.message,
-        });
+        if (error.message.includes("Invalid login credentials")) {
+          toast({
+            variant: "destructive",
+            title: "Login failed",
+            description: "Incorrect email or password. Please check your credentials and try again.",
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Login failed",
+            description: error.message,
+          });
+        }
       }
     } catch (error) {
       toast({
@@ -208,6 +224,9 @@ const Auth = () => {
                     minLength={6}
                     disabled={isLoading}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Password must be at least 6 characters long
+                  </p>
                 </div>
                 <Button 
                   type="submit" 
