@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
   role: "user" | "assistant";
@@ -7,9 +8,15 @@ interface Message {
 
 interface UseLegalChatProps {
   mode?: "chat" | "document" | "research" | "contract";
+  conversationId?: string | null;
+  onConversationCreated?: (id: string) => void;
 }
 
-export const useLegalChat = ({ mode = "chat" }: UseLegalChatProps = {}) => {
+export const useLegalChat = ({ 
+  mode = "chat", 
+  conversationId = null,
+  onConversationCreated 
+}: UseLegalChatProps = {}) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -17,6 +24,86 @@ export const useLegalChat = ({ mode = "chat" }: UseLegalChatProps = {}) => {
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(conversationId);
+
+  // Load conversation messages when conversationId changes
+  useEffect(() => {
+    if (conversationId) {
+      loadConversation(conversationId);
+      setCurrentConversationId(conversationId);
+    } else {
+      resetChat();
+      setCurrentConversationId(null);
+    }
+  }, [conversationId]);
+
+  const loadConversation = async (convId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setMessages(data.map(msg => ({
+          role: msg.role as "user" | "assistant",
+          content: msg.content
+        })));
+      } else {
+        resetChat();
+      }
+    } catch (error) {
+      console.error("Error loading conversation:", error);
+      resetChat();
+    }
+  };
+
+  const saveMessage = async (convId: string, role: "user" | "assistant", content: string) => {
+    try {
+      await supabase.from("chat_messages").insert({
+        conversation_id: convId,
+        role,
+        content,
+      });
+
+      // Update conversation timestamp
+      await supabase
+        .from("chat_conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", convId);
+    } catch (error) {
+      console.error("Error saving message:", error);
+    }
+  };
+
+  const createConversation = async (firstMessage: string): Promise<string | null> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // Create conversation with title from first message
+      const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? "..." : "");
+      
+      const { data, error } = await supabase
+        .from("chat_conversations")
+        .insert({
+          user_id: user.id,
+          title,
+          mode,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data.id;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      return null;
+    }
+  };
 
   const sendMessage = async (input: string) => {
     if (!input.trim()) return;
@@ -24,6 +111,21 @@ export const useLegalChat = ({ mode = "chat" }: UseLegalChatProps = {}) => {
     const userMsg: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
+
+    // Create conversation if needed
+    let convId = currentConversationId;
+    if (!convId) {
+      convId = await createConversation(input);
+      if (convId) {
+        setCurrentConversationId(convId);
+        onConversationCreated?.(convId);
+      }
+    }
+
+    // Save user message
+    if (convId) {
+      await saveMessage(convId, "user", input);
+    }
 
     let assistantContent = "";
 
@@ -45,17 +147,28 @@ export const useLegalChat = ({ mode = "chat" }: UseLegalChatProps = {}) => {
         messages: [...messages, userMsg],
         mode,
         onDelta: updateAssistantMessage,
-        onDone: () => setIsLoading(false),
+        onDone: async () => {
+          // Save assistant message
+          if (convId && assistantContent) {
+            await saveMessage(convId, "assistant", assistantContent);
+          }
+          setIsLoading(false);
+        },
         onError: (error) => {
           console.error("Chat error:", error);
           setIsLoading(false);
+          const errorMsg = "I apologize, but I encountered an error. Please try again.";
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
-              content: "I apologize, but I encountered an error. Please try again.",
+              content: errorMsg,
             },
           ]);
+          // Save error message
+          if (convId) {
+            saveMessage(convId, "assistant", errorMsg);
+          }
         },
       });
     } catch (error) {
@@ -71,6 +184,7 @@ export const useLegalChat = ({ mode = "chat" }: UseLegalChatProps = {}) => {
         content: "Hi, I'm LegalGuru. What legal advice do you need?",
       },
     ]);
+    setCurrentConversationId(null);
   };
 
   return { messages, sendMessage, isLoading, resetChat };
