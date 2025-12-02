@@ -69,6 +69,13 @@ export const Navigation = () => {
             
             {user ? (
               <div className="flex items-center gap-4">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => navigate("/chat")}
+                >
+                  Chat
+                </Button>
                 <span className="text-sm text-muted-foreground flex items-center gap-2">
                   <User className="h-4 w-4" />
                   {user.email}
@@ -131,6 +138,14 @@ export const Navigation = () => {
               
               {user ? (
                 <>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full"
+                    onClick={() => navigate("/chat")}
+                  >
+                    Chat
+                  </Button>
                   <div className="text-sm text-muted-foreground px-2 py-1 flex items-center gap-2">
                     <User className="h-4 w-4" />
                     {user.email}

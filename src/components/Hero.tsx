@@ -1,8 +1,37 @@
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Sparkles } from "lucide-react";
 import heroImage from "@/assets/hero-legal.jpg";
+import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 export const Hero = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleStartConversation = () => {
+    if (user) {
+      navigate("/chat");
+    } else {
+      navigate("/auth");
+    }
+  };
+
   return (
     <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
       {/* Background Image with Overlay */}
@@ -35,11 +64,11 @@ export const Hero = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Button variant="legal" size="lg" className="text-lg px-8">
+            <Button variant="legal" size="lg" className="text-lg px-8" onClick={handleStartConversation}>
               <MessageSquare className="h-5 w-5" />
               Start Conversation
             </Button>
-            <Button variant="legalOutline" size="lg" className="text-lg px-8 text-legal-cream border-legal-cream hover:bg-legal-cream/10">
+            <Button variant="legalOutline" size="lg" className="text-lg px-8 text-legal-cream border-legal-cream hover:bg-legal-cream/10" onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>
               Learn More
             </Button>
           </div>
